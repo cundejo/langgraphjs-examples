@@ -1,0 +1,22 @@
+{
+  "name": "@cundejo/langgraph-examples",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "private": true,
+  "dependencies": {
+    "@langchain/community": "^0.3.43",
+    "@langchain/core": "0.3.57",
+    "@langchain/langgraph": "^0.2.73",
+    "@langchain/openai": "^0.5.10",
+    "chalk": "^5.4.1",
+    "dotenv": "^16.5.0"
+  },
+  "devDependencies": {
+    "prettier": "^3.5.3"
+  }
+}
