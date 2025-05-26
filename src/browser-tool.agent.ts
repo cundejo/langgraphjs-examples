@@ -40,8 +40,8 @@ async function callModel(state: typeof MessagesAnnotation.State) {
 // Define a new graph
 const workflow = new StateGraph(MessagesAnnotation)
   .addNode("agent", callModel)
-  .addEdge(START, "agent") // Special name for the entrypoint
   .addNode("tools", toolNode)
+  .addEdge(START, "agent") // Special name for the entrypoint
   .addEdge("tools", "agent")
   .addConditionalEdges("agent", shouldContinue);
 
