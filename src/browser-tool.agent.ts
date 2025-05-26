@@ -10,6 +10,11 @@ import {
 } from "@langchain/langgraph";
 import { models } from "./utils/models";
 
+/**
+ * An agent that uses a tool to search the web using Tavily.
+ * Doc: https://langchain-ai.github.io/langgraphjs/tutorials/quickstart
+ */
+
 // Define the tools for the agent to use
 const tools = [new TavilySearchResults({ maxResults: 3 })];
 const toolNode = new ToolNode(tools);

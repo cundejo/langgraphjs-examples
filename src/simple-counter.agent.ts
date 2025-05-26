@@ -11,7 +11,6 @@ import { Annotation, END, START, StateGraph } from "@langchain/langgraph";
  * Doc: https://langchain-ai.github.io/langgraphjs/concepts/low_level/#reducers
  */
 
-// Define a simple counter state
 const CounterStateAnnotation = Annotation.Root({
   number: Annotation<number>,
   history: Annotation<number[]>,
