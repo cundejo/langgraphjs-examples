@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { TavilySearchResults } from "@langchain/community/tools/tavily_search";
+import { TavilySearch } from "@langchain/tavily";
 import { HumanMessage, AIMessage } from "@langchain/core/messages";
 import { ToolNode } from "@langchain/langgraph/prebuilt";
 import {
@@ -16,7 +16,7 @@ import { models } from "./utils/models";
  */
 
 // Define the tools for the agent to use
-const tools = [new TavilySearchResults({ maxResults: 3 })];
+const tools = [new TavilySearch({ maxResults: 3 })];
 const toolNode = new ToolNode(tools);
 
 // Create a model and give it access to the tools

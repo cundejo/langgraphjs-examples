@@ -104,7 +104,7 @@ const workflow = new StateGraph(MessagesAnnotation)
   .addNode("agent", callModel)
   .addNode("tools", toolNode)
   .addEdge(START, "agent")
-  .addConditionalEdges("agent", shouldContinue, ["tools", END])
+  .addConditionalEdges("agent", shouldContinue)
   .addEdge("tools", "agent");
 
 const app = workflow.compile();
