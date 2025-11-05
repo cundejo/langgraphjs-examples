@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { END, START, StateGraph } from "@langchain/langgraph";
+import { Annotation, END, START, StateGraph } from "@langchain/langgraph";
 import { models } from "./utils/models";
 import isEmpty from "lodash/isEmpty";
 import map from "lodash/map";
@@ -15,21 +15,24 @@ import { z } from "zod";
 // --- 1. DEFINE THE STATE ---
 
 /**
- * This interface defines the "state" of our graph.
+ * This defines the "state" of our graph using Annotation.
  * It's the data that gets passed between nodes.
  * Each node will read from this state and can write back to it
  * by returning a "partial" state object.
  */
-interface AppState {
-  text: string;
-  names?: string[];
-  people?: Person[];
-}
 
 type Person = {
   id: number;
   name: string;
 };
+
+const StateAnnotation = Annotation.Root({
+  text: Annotation<string>,
+  names: Annotation<string[]>,
+  people: Annotation<Person[]>,
+});
+
+type State = typeof StateAnnotation.State;
 
 // --- 2. DEFINE THE GRAPH NODES ---
 
@@ -41,7 +44,7 @@ type Person = {
 /**
  * Node 1: Extracts names from the text using an LLM.
  */
-async function extractNames(state: AppState): Promise<Partial<AppState>> {
+async function extractNames(state: State): Promise<Partial<State>> {
   console.log("--- Executing Node 1: extractNames ---");
   const { text } = state;
 
@@ -72,7 +75,7 @@ async function extractNames(state: AppState): Promise<Partial<AppState>> {
  * Node 2: Maps the list of names to a list of Person objects.
  * This is an async function just to show it's possible.
  */
-async function namesToPeople(state: AppState): Promise<Partial<AppState>> {
+async function namesToPeople(state: State): Promise<Partial<State>> {
   console.log("--- Executing Node 2: namesToPeople ---");
   const { names } = state; // Read the 'names' from the state
 
@@ -96,7 +99,7 @@ async function namesToPeople(state: AppState): Promise<Partial<AppState>> {
 
 async function main() {
   // The StateGraph is our main workflow class.
-  const workflow = new StateGraph<AppState>();
+  const workflow = new StateGraph(StateAnnotation);
 
   // Add Nodes to the Graph
   workflow.addNode("extractor", extractNames);
@@ -126,11 +129,11 @@ async function main() {
   {
     text: 'The team includes Alice, Bob, and Dr. Eve. We also spoke to Carol.',
     names: [ 'Alice', 'Bob', 'Eve', 'Carol' ],
-    mappedPeople: [
-      { id: 1, person: 'Alice' },
-      { id: 2, person: 'Bob' },
-      { id: 3, person: 'Eve' },
-      { id: 4, person: 'Carol' }
+    people: [
+      { id: 1, name: 'Alice' },
+      { id: 2, name: 'Bob' },
+      { id: 3, name: 'Eve' },
+      { id: 4, name: 'Carol' }
     ]
   }
   */
