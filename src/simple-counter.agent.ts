@@ -1,80 +1,131 @@
 import { Annotation, END, START, StateGraph } from "@langchain/langgraph";
 
 /**
- * Countdown to zero
- * A simple example to show how to use the state, and conditional edge.
- * We pass a number:
- * - If number > 10: subtract 5
- * - If number <= 10: subtract 1
- * - End when number <= 0
+ * Countdown Agent
  *
- * Doc: https://langchain-ai.github.io/langgraphjs/concepts/low_level/#reducers
+ * This agent demonstrates conditional routing and state management:
+ * - Numbers > 10: subtract 5 (fast countdown)
+ * - Numbers 1-10: subtract 1 (slow countdown)
+ * - Numbers <= 0: end
+ *
+ * Key concepts:
+ * - Custom state with Annotation.Root()
+ * - Conditional edges with multiple possible routes
+ * - State history tracking
+ * - Dynamic routing based on state values
+ *
+ * Reference: https://langchain-ai.github.io/langgraphjs/concepts/low_level/#reducers
  */
 
-const CounterStateAnnotation = Annotation.Root({
+// ============================================================================
+// STATE DEFINITION
+// ============================================================================
+
+/**
+ * Graph state tracking the current number and countdown history.
+ */
+const CountdownState = Annotation.Root({
   number: Annotation<number>,
   history: Annotation<number[]>,
 });
 
-const subtract5 = async ({
-  number,
-  history,
-}: typeof CounterStateAnnotation.State) => {
-  const newNumber = number - 5;
+type State = typeof CountdownState.State;
+
+// ============================================================================
+// GRAPH NODES
+// ============================================================================
+
+/**
+ * Subtracts 5 from the current number (fast countdown).
+ */
+async function subtractFive(state: State): Promise<Partial<State>> {
+  const newNumber = state.number - 5;
+  console.log(`  ${state.number} - 5 = ${newNumber}`);
   return {
     number: newNumber,
-    history: [...history, newNumber],
+    history: [...state.history, newNumber],
   };
-};
+}
 
-const subtract1 = async ({
-  number,
-  history,
-}: typeof CounterStateAnnotation.State) => {
-  const newNumber = number - 1;
+/**
+ * Subtracts 1 from the current number (slow countdown).
+ */
+async function subtractOne(state: State): Promise<Partial<State>> {
+  const newNumber = state.number - 1;
+  console.log(`  ${state.number} - 1 = ${newNumber}`);
   return {
     number: newNumber,
-    history: [...history, newNumber],
+    history: [...state.history, newNumber],
   };
-};
+}
 
-const routingFunction = (state: typeof CounterStateAnnotation.State) => {
-  const { number } = state;
-  if (number > 10) return "subtract5";
-  if (number <= 10 && number > 0) return "subtract1";
+// ============================================================================
+// ROUTING LOGIC
+// ============================================================================
+
+/**
+ * Routes to the appropriate countdown node based on the current number.
+ *
+ * @returns "subtract_five" for numbers > 10, "subtract_one" for 1-10, END for <= 0
+ */
+function routeCountdown(state: State) {
+  if (state.number > 10) return "subtract_five";
+  if (state.number > 0) return "subtract_one";
   return END;
-};
+}
 
-// Create the workflow
-const workflow = new StateGraph(CounterStateAnnotation)
-  .addNode("subtract5", subtract5)
-  .addNode("subtract1", subtract1)
-  .addConditionalEdges(START, routingFunction, ["subtract5", "subtract1", END])
-  .addConditionalEdges("subtract5", routingFunction, [
-    "subtract5",
-    "subtract1",
+// ============================================================================
+// GRAPH DEFINITION
+// ============================================================================
+
+const graph = new StateGraph(CountdownState)
+  .addNode("subtract_five", subtractFive)
+  .addNode("subtract_one", subtractOne)
+  .addConditionalEdges(START, routeCountdown, [
+    "subtract_five",
+    "subtract_one",
     END,
   ])
-  .addConditionalEdges("subtract1", routingFunction, [
-    "subtract5",
-    "subtract1",
+  .addConditionalEdges("subtract_five", routeCountdown, [
+    "subtract_five",
+    "subtract_one",
     END,
-  ]);
+  ])
+  .addConditionalEdges("subtract_one", routeCountdown, [
+    "subtract_five",
+    "subtract_one",
+    END,
+  ])
+  .compile();
 
-const app = workflow.compile();
+// ============================================================================
+// EXECUTION
+// ============================================================================
 
-const main = async () => {
-  const finalState = await app.invoke({
-    number: 57,
+async function main() {
+  console.log("=".repeat(60));
+  console.log("Countdown Agent");
+  console.log("=".repeat(60));
+
+  const startNumber = 57;
+  console.log(`\n→ Starting countdown from ${startNumber}:\n`);
+
+  const result = await graph.invoke({
+    number: startNumber,
     history: [],
   });
-  console.log(finalState);
-};
 
-// Only run if this file is executed directly
+  console.log("\n" + "=".repeat(60));
+  console.log("Final Result");
+  console.log("=".repeat(60));
+  console.log("Final number:", result.number);
+  console.log("History:", result.history);
+  console.log("Steps taken:", result.history.length);
+}
+
 if (require.main === module) {
   main().catch((error) => {
-    console.error("Unhandled error:", error);
+    console.error("\n❌ Error:", error.message);
     process.exit(1);
   });
 }

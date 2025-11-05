@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { TavilySearch } from "@langchain/tavily";
-import { HumanMessage, AIMessage } from "@langchain/core/messages";
+import { AIMessage } from "@langchain/core/messages";
 import { ToolNode } from "@langchain/langgraph/prebuilt";
 import {
   StateGraph,
@@ -11,67 +11,112 @@ import {
 import { models } from "./utils/models";
 
 /**
- * An agent that uses a tool to search the web using Tavily.
- * Doc: https://langchain-ai.github.io/langgraphjs/tutorials/quickstart
+ * Web Search Agent
+ *
+ * This agent demonstrates tool-calling with conditional routing:
+ * 1. Agent receives a user query
+ * 2. Agent decides whether to use the Tavily search tool
+ * 3. If tool is called, results are returned to the agent
+ * 4. Agent formulates a final response
+ *
+ * Key concepts:
+ * - MessagesAnnotation for conversation state
+ * - Tool binding with .bindTools()
+ * - Conditional edges for dynamic routing
+ * - ToolNode for automatic tool execution
+ *
+ * Reference: https://langchain-ai.github.io/langgraphjs/tutorials/quickstart
  */
 
-// Define the tools for the agent to use
-const tools = [new TavilySearch({ maxResults: 3 })];
+// ============================================================================
+// TOOLS SETUP
+// ============================================================================
+
+const searchTool = new TavilySearch({ maxResults: 3 });
+const tools = [searchTool];
 const toolNode = new ToolNode(tools);
 
-// Create a model and give it access to the tools
-const model = models.openai().bindTools(tools);
+// ============================================================================
+// MODEL SETUP
+// ============================================================================
 
-// Define the function that determines whether to continue or not
-function shouldContinue({ messages }: typeof MessagesAnnotation.State) {
-  const lastMessage = messages[messages.length - 1] as AIMessage;
+const llm = models.openai().bindTools(tools);
 
-  // If the LLM makes a tool call, then we route to the "tools" node
-  if (lastMessage.tool_calls?.length) {
-    return "tools";
-  }
-  // Otherwise, we stop (reply to the user) using the special "__end__" node
-  return END;
-}
+// ============================================================================
+// GRAPH NODES
+// ============================================================================
 
-// Define the function that calls the model
-async function callModel(state: typeof MessagesAnnotation.State) {
-  const response = await model.invoke(state.messages);
-
-  // We return a list, because this will get added to the existing list
+/**
+ * Invokes the LLM to process messages and optionally call tools.
+ */
+async function callAgent(state: typeof MessagesAnnotation.State) {
+  const response = await llm.invoke(state.messages);
   return { messages: [response] };
 }
 
-// Define a new graph
-const workflow = new StateGraph(MessagesAnnotation)
-  .addNode("agent", callModel)
+// ============================================================================
+// ROUTING LOGIC
+// ============================================================================
+
+/**
+ * Determines the next node based on whether the agent made tool calls.
+ *
+ * @returns "tools" if the agent wants to use a tool, END otherwise
+ */
+function routeAfterAgent({ messages }: typeof MessagesAnnotation.State) {
+  const lastMessage = messages[messages.length - 1] as AIMessage;
+
+  if (lastMessage.tool_calls?.length) {
+    return "tools";
+  }
+
+  return END;
+}
+
+// ============================================================================
+// GRAPH DEFINITION
+// ============================================================================
+
+const graph = new StateGraph(MessagesAnnotation)
+  .addNode("agent", callAgent)
   .addNode("tools", toolNode)
-  .addEdge(START, "agent") // Special name for the entrypoint
+  .addEdge(START, "agent")
   .addEdge("tools", "agent")
-  .addConditionalEdges("agent", shouldContinue);
+  .addConditionalEdges("agent", routeAfterAgent)
+  .compile();
 
-// Finally, we compile it into a LangChain Runnable.
-const app = workflow.compile();
+// ============================================================================
+// EXECUTION
+// ============================================================================
 
-const main = async () => {
-  // Use the agent
-  const finalState = await app.invoke({
-    messages: [new HumanMessage("what is the weather in sf")],
+async function main() {
+  console.log("=".repeat(60));
+  console.log("Web Search Agent");
+  console.log("=".repeat(60));
+
+  console.log("\n→ Query 1: What is the weather in SF?");
+  const state1 = await graph.invoke({
+    messages: [{ role: "user", content: "what is the weather in sf" }],
   });
-  console.log(finalState.messages[finalState.messages.length - 1].content);
+  const response1 = state1.messages[state1.messages.length - 1].content;
+  console.log("  ✓ Response:", response1);
 
-  const nextState = await app.invoke({
-    // Including the messages from the previous run gives the LLM context.
-    // This way it knows we're asking about the weather in NY
-    messages: [...finalState.messages, new HumanMessage("what about ny")],
+  console.log("\n→ Query 2: What about NY? (with context)");
+  const state2 = await graph.invoke({
+    messages: [
+      ...state1.messages,
+      { role: "user", content: "what about ny" },
+    ],
   });
-  console.log(nextState.messages[nextState.messages.length - 1].content);
-};
+  const response2 = state2.messages[state2.messages.length - 1].content;
+  console.log("  ✓ Response:", response2);
 
-// Only run if this file is executed directly
+  console.log("\n" + "=".repeat(60));
+}
+
 if (require.main === module) {
   main().catch((error) => {
-    console.error("Unhandled error:", error);
+    console.error("\n❌ Error:", error.message);
     process.exit(1);
   });
 }

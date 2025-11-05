@@ -6,143 +6,138 @@ import map from "lodash/map";
 import { z } from "zod";
 
 /**
- * Given a text, it will:
- * - Extract all the people names
- * - Map the people names to a Person object with their name and dummy id.
- * - Return the list of people
+ * People Extractor Agent
+ *
+ * This agent demonstrates a two-step workflow:
+ * 1. Extract person names from text using an LLM with structured output
+ * 2. Transform names into structured Person objects with IDs
+ *
+ * Key concepts:
+ * - Custom state management with Annotation.Root()
+ * - Structured LLM output using Zod schemas
+ * - Sequential node execution
  */
 
-// --- 1. DEFINE THE STATE ---
+// ============================================================================
+// STATE DEFINITION
+// ============================================================================
 
 /**
- * This defines the "state" of our graph using Annotation.
- * It's the data that gets passed between nodes.
- * Each node will read from this state and can write back to it
- * by returning a "partial" state object.
+ * Person entity with unique identifier
  */
-
 type Person = {
   id: number;
   name: string;
 };
 
-const StateAnnotation = Annotation.Root({
+/**
+ * Graph state that flows through all nodes.
+ * Each node can read from and update this state.
+ */
+const PeopleExtractorState = Annotation.Root({
   text: Annotation<string>,
   names: Annotation<string[]>,
   people: Annotation<Person[]>,
 });
 
-type State = typeof StateAnnotation.State;
+type State = typeof PeopleExtractorState.State;
 
-// --- 2. DEFINE THE GRAPH NODES ---
-
-/**
- * A node is just an async function that receives the current state
- * and returns a partial state to be merged.
- */
+// ============================================================================
+// GRAPH NODES
+// ============================================================================
 
 /**
- * Node 1: Extracts names from the text using an LLM.
+ * Extracts person names from text using an LLM with structured output.
+ *
+ * Uses Zod schema to enforce the LLM returns a properly formatted list of names.
  */
 async function extractNames(state: State): Promise<Partial<State>> {
-  console.log("--- Executing Node 1: extractNames ---");
+  console.log("→ Extracting names from text...");
   const { text } = state;
 
-  // We use Zod to define the *exact* output structure we want from the LLM.
   const nameSchema = z.object({
     names: z
       .array(z.string())
       .describe("A list of person names extracted from the text."),
   });
 
-  // Initialize the LLM
-  // .withStructuredOutput() magically forces the LLM to return valid JSON
-  // that matches our Zod schema.
-  const structuredLLM = models.openai().withStructuredOutput(nameSchema);
-
-  // Invoke the LLM with the input text
-  const result = await structuredLLM.invoke(
+  const llm = models.openai().withStructuredOutput(nameSchema);
+  const result = await llm.invoke(
     `Please extract all person names from the following text: \n\n${text}`,
   );
 
-  console.log("LLM extracted names:", result.names);
-
-  // Return the partial state to be merged back into the main state.
+  console.log(`  ✓ Found ${result.names.length} names:`, result.names);
   return { names: result.names };
 }
 
 /**
- * Node 2: Maps the list of names to a list of Person objects.
- * This is an async function just to show it's possible.
+ * Transforms extracted names into structured Person objects with unique IDs.
+ *
+ * Simulates an async operation (e.g., database lookup or API call).
  */
-async function namesToPeople(state: State): Promise<Partial<State>> {
-  console.log("--- Executing Node 2: namesToPeople ---");
-  const { names } = state; // Read the 'names' from the state
+async function mapToPeople(state: State): Promise<Partial<State>> {
+  console.log("→ Mapping names to Person objects...");
+  const { names } = state;
 
   if (isEmpty(names)) {
-    console.log("No names found to map.");
+    console.log("  ⚠ No names to map");
     return { people: [] };
   }
 
-  // Simulate an async operation (like a database lookup or API call)
-  await new Promise((resolve) => setTimeout(resolve, 500)); // 500ms delay
+  await new Promise((resolve) => setTimeout(resolve, 500));
 
-  const people = map(names, (name, i) => ({ id: i + 1, name }));
+  const people = map(names, (name, index) => ({
+    id: index + 1,
+    name,
+  }));
 
-  console.log("Mapped objects:", people);
-
-  // Return the new data to be merged into the state.
+  console.log(`  ✓ Created ${people.length} Person objects`);
   return { people };
 }
 
-// --- 3. DEFINE THE GRAPH WORKFLOW ---
+// ============================================================================
+// GRAPH DEFINITION
+// ============================================================================
 
+/**
+ * Creates and executes the people extraction workflow.
+ */
 async function main() {
-  // The StateGraph is our main workflow class.
-  const workflow = new StateGraph(StateAnnotation);
+  console.log("=".repeat(60));
+  console.log("People Extractor Agent");
+  console.log("=".repeat(60));
 
-  // Add Nodes to the Graph
-  workflow.addNode("extractor", extractNames);
-  workflow.addNode("mapper", namesToPeople);
+  const graph = new StateGraph(PeopleExtractorState)
+    .addNode("extract_names", extractNames)
+    .addNode("map_to_people", mapToPeople)
+    .addEdge(START, "extract_names")
+    .addEdge("extract_names", "map_to_people")
+    .addEdge("map_to_people", END)
+    .compile();
 
-  // Define the Edges (the flow)
-  workflow.addEdge(START, "extractor");
-  workflow.addEdge("extractor", "mapper");
-  workflow.addEdge("mapper", END);
-
-  // Compile the Graph
-  const app = workflow.compile();
-
-  // Run the Graph!
-  console.log("--- Invoking Graph ---");
   const input = {
     text: "The team includes Alice, Bob, and Dr. Eve. We also spoke to Carol.",
   };
 
-  const result = await app.invoke(input);
+  console.log("\nInput text:", input.text);
+  console.log();
 
-  console.log("\n--- Final Graph State ---");
-  console.log(result);
+  const result = await graph.invoke(input);
 
-  /*
-  Expected Output:
-  {
-    text: 'The team includes Alice, Bob, and Dr. Eve. We also spoke to Carol.',
-    names: [ 'Alice', 'Bob', 'Eve', 'Carol' ],
-    people: [
-      { id: 1, name: 'Alice' },
-      { id: 2, name: 'Bob' },
-      { id: 3, name: 'Eve' },
-      { id: 4, name: 'Carol' }
-    ]
-  }
-  */
+  console.log("\n" + "=".repeat(60));
+  console.log("Final Result");
+  console.log("=".repeat(60));
+  console.log("Names extracted:", result.names);
+  console.log("People created:", result.people);
 }
 
-// Only run if this file is executed directly
+// ============================================================================
+// EXECUTION
+// ============================================================================
+
 if (require.main === module) {
   main().catch((error) => {
-    console.error("Unhandled error:", error);
+    console.error("\n❌ Error:", error.message);
     process.exit(1);
   });
 }
