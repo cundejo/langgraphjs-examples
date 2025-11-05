@@ -9,127 +9,149 @@ import {
   START,
   StateGraph,
 } from "@langchain/langgraph";
-import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 
 /**
- * Calculator tools
- * Doc: https://langchain-ai.github.io/langgraphjs/how-tos/tool-calling
+ * Calculator Agent
+ *
+ * This agent demonstrates custom tool creation and usage:
+ * 1. Agent receives a math problem
+ * 2. Agent breaks it down and calls calculator tools (add/subtract)
+ * 3. Agent synthesizes the final answer
+ *
+ * Key concepts:
+ * - Custom tool definition with Zod schemas
+ * - Tool binding and automatic execution
+ * - Multi-step reasoning with tools
+ *
+ * Reference: https://langchain-ai.github.io/langgraphjs/how-tos/tool-calling
  */
 
-type AddArgs = {
-  number1: number;
-  number2: number;
-};
+// ============================================================================
+// TOOL DEFINITIONS
+// ============================================================================
 
-const add = tool(
-  ({ number1, number2 }: AddArgs) => {
-    return number1 + number2;
-  },
+/**
+ * Adds two numbers together.
+ */
+const addTool = tool(
+  ({ a, b }: { a: number; b: number }) => a + b,
   {
     name: "add",
-    description: "Add two numbers",
+    description: "Add two numbers together",
     schema: z.object({
-      number1: z.number().describe("The first number"),
-      number2: z.number().describe("The second number"),
+      a: z.number().describe("The first number"),
+      b: z.number().describe("The second number"),
     }),
   },
 );
 
-type SubtractArgs = {
-  number1: number;
-  number2: number;
-};
-
-const subtract = tool(
-  ({ number1, number2 }: SubtractArgs) => {
-    return number1 - number2;
-  },
+/**
+ * Subtracts the second number from the first.
+ */
+const subtractTool = tool(
+  ({ a, b }: { a: number; b: number }) => a - b,
   {
     name: "subtract",
-    description: "Subtract two numbers",
+    description: "Subtract the second number from the first",
     schema: z.object({
-      number1: z.number().describe("The first number"),
-      number2: z.number().describe("The second number"),
+      a: z.number().describe("The first number"),
+      b: z.number().describe("The second number"),
     }),
   },
 );
 
-// Define the tools for the agent to use in a node
-const tools = [add, subtract];
+// ============================================================================
+// TOOLS SETUP
+// ============================================================================
+
+const tools = [addTool, subtractTool];
 const toolNode = new ToolNode(tools);
 
-// Example manually calling the ToolNode
-// const messageWithSingleToolCall = new AIMessage({
-//   content: "",
-//   tool_calls: [
-//     {
-//       name: "add",
-//       args: { number1: 1, number2: 3 },
-//       id: "tool_call_id_1",
-//       type: "tool_call",
-//     },
-//     {
-//       name: "subtract",
-//       args: { number1: 1, number2: 3 },
-//       id: "tool_call_id_2",
-//       type: "tool_call",
-//     },
-//   ],
-// });
+// ============================================================================
+// MODEL SETUP
+// ============================================================================
 
-const model = models.openai().bindTools(tools);
+const llm = models.openai().bindTools(tools);
 
-const shouldContinue = (state: typeof MessagesAnnotation.State) => {
-  const { messages } = state;
-  const lastMessage = messages[messages.length - 1];
+// ============================================================================
+// GRAPH NODES
+// ============================================================================
+
+/**
+ * Invokes the LLM to process messages and optionally call calculator tools.
+ */
+async function callAgent(state: typeof MessagesAnnotation.State) {
+  const response = await llm.invoke(state.messages);
+  return { messages: response };
+}
+
+// ============================================================================
+// ROUTING LOGIC
+// ============================================================================
+
+/**
+ * Determines whether to continue to tools or end the conversation.
+ */
+function routeAfterAgent(state: typeof MessagesAnnotation.State) {
+  const lastMessage = state.messages[state.messages.length - 1];
 
   if (
     "tool_calls" in lastMessage &&
     Array.isArray(lastMessage.tool_calls) &&
     lastMessage.tool_calls?.length
-  )
+  ) {
     return "tools";
+  }
 
   return END;
-};
+}
 
-const callModel = async (state: typeof MessagesAnnotation.State) => {
-  const { messages } = state;
-  const response = await model.invoke(messages);
-  return { messages: response };
-};
+// ============================================================================
+// GRAPH DEFINITION
+// ============================================================================
 
-const workflow = new StateGraph(MessagesAnnotation)
-  // Define the two nodes we will cycle between
-  .addNode("agent", callModel)
+const graph = new StateGraph(MessagesAnnotation)
+  .addNode("agent", callAgent)
   .addNode("tools", toolNode)
   .addEdge(START, "agent")
-  .addConditionalEdges("agent", shouldContinue)
-  .addEdge("tools", "agent");
+  .addConditionalEdges("agent", routeAfterAgent)
+  .addEdge("tools", "agent")
+  .compile();
 
-const app = workflow.compile();
+// ============================================================================
+// EXECUTION
+// ============================================================================
 
-const main = async () => {
-  const finalState = await app.invoke({
+async function main() {
+  console.log("=".repeat(60));
+  console.log("Calculator Agent");
+  console.log("=".repeat(60));
+
+  const problem =
+    "If I have 7 apples and I give 3 to my friend, and then I buy 5 more, how many apples do I have?";
+
+  console.log("\n→ Problem:", problem);
+
+  const result = await graph.invoke({
     messages: [
-      new SystemMessage(
-        "Use the tools to calculate and answer only the result number, nothing more.",
-      ),
-      new HumanMessage(
-        "If I have 7 apples and I give 3 to my friend, and then I buy 5 more, how many apples do I have?",
-      ),
+      {
+        role: "system",
+        content:
+          "Use the calculator tools to solve the problem. Return only the final number as your answer.",
+      },
+      { role: "user", content: problem },
     ],
   });
 
-  const { messages } = finalState;
-  const lastMessage = messages[messages.length - 1];
-  console.log(lastMessage.content);
-};
+  const answer = result.messages[result.messages.length - 1].content;
+  console.log("  ✓ Answer:", answer);
 
-// Only run if this file is executed directly
+  console.log("\n" + "=".repeat(60));
+}
+
 if (require.main === module) {
   main().catch((error) => {
-    console.error("Unhandled error:", error);
+    console.error("\n❌ Error:", error.message);
     process.exit(1);
   });
 }
