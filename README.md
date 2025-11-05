@@ -6,7 +6,7 @@ A collection of well-documented LangGraph agents demonstrating various patterns 
 
 This repository contains examples that showcase different LangGraph capabilities:
 
-1. **People Extractor Agent** - Structured data extraction with custom state
+1. **People and Places Extractor Agent** - Parallel structured data extraction with custom state
 2. **Web Search Agent** - Tool-calling with conditional routing
 3. **Calculator Agent** - Custom tool creation and multi-step reasoning
 4. **Countdown Agent** - Conditional routing and state management
@@ -43,28 +43,33 @@ TAVILY_API_KEY=your_tavily_api_key_here
 
 ## 🤖 Agents
 
-### 1. People Extractor Agent
+### 1. People and Places Extractor Agent
 
-**File:** `src/people-extractor.agent.ts`
+**File:** `src/people-places-extractor.agent.ts`
 
-Demonstrates a two-step workflow that extracts person names from text and transforms them into structured objects.
+Demonstrates a parallel extraction workflow that extracts both person names and place names from text simultaneously, then transforms them into structured objects.
 
 **Key Concepts:**
 - Custom state management with `Annotation.Root()`
 - Structured LLM output using Zod schemas
-- Sequential node execution
+- Parallel node execution
+- Multiple independent extraction pipelines running concurrently
 
 **Run:**
 ```bash
-npx ts-node src/people-extractor.agent.ts
+npx ts-node src/people-places-extractor.agent.ts
 ```
 
 **Example Output:**
 ```
 → Extracting names from text...
   ✓ Found 4 names: [ 'Alice', 'Bob', 'Dr. Eve', 'Carol' ]
+→ Extracting place names from text...
+  ✓ Found 4 places: [ 'London', 'Paris', 'Tokyo', 'New York' ]
 → Mapping names to Person objects...
   ✓ Created 4 Person objects
+→ Mapping place names to Place objects...
+  ✓ Created 4 Place objects
 ```
 
 ---
@@ -191,15 +196,15 @@ const toolNode = new ToolNode(tools);
 ```
 langgraph-examples/
 ├── src/
-│   ├── people-extractor.agent.ts    # Structured data extraction
-│   ├── browser-tool.agent.ts        # Web search with tools
-│   ├── calculator-tool.agent.ts     # Custom calculator tools
-│   ├── simple-counter.agent.ts      # Conditional routing
+│   ├── people-places-extractor.agent.ts    # Parallel structured data extraction
+│   ├── browser-tool.agent.ts               # Web search with tools
+│   ├── calculator-tool.agent.ts            # Custom calculator tools
+│   ├── simple-counter.agent.ts             # Conditional routing
 │   └── utils/
-│       └── models.ts                # Shared model configuration
+│       └── models.ts                       # Shared model configuration
 ├── package.json
 ├── tsconfig.json
-├── .env                             # API keys (create this)
+├── .env                                    # API keys (create this)
 └── README.md
 ```
 
